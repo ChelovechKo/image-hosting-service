@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Загрузка изображения</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Merienda&display=swap" rel="stylesheet">
+	<link rel="icon" href="/static/favicon.ico" type="image/x-icon">	
+</head>
+<body>
+    <!-- Контейнер для навигационных ссылок -->
+    <div class="top-links">
+        <a href="/" class="top-link">Главная</a> |
+        <a href="/images" class="top-link">Каталог картинок</a>
+    </div>
+
+    <!-- Загрузка картинок -->
+    <div class="container">
+        <!-- Отображаем сообщения (успех или ошибка) -->
+		<div class="messages">
+			{% with messages = get_flashed_messages(with_categories=true) %}		
+				{% for category, message in messages %}
+					<div class="alert {{ category }}">
+						<div><strong>{{ message[0] }}</strong></div>
+						{% if message[1] %}
+						<div>
+							<button id="copyBtn">📋</button>
+							{{ message[1] | safe }}
+						</div>							
+						{% endif %}									
+					</div>
+				{% endfor %}
+			{% endwith %}			
+		</div>
+		
+        <h1>Загрузите ваше изображение 🐱</h1>
+        <p>Максимальный размер изображения — 5 MB.</p>
+
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="chooseFile" class="btn">
+                    <span>Выберите файл 🖼️</span>
+                    <input type="file" name="file" id="chooseFile" class="file-input" required>
+                </label>
+                <input type="submit" id="loadBtn" value="Загрузить 😻" class="btn btn-inactive">
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+			const chooseFileBtn = document.getElementById('chooseFile'); // кнопка выбора картинки
+			const loadBtn = document.getElementById('loadBtn'); // кнопка загрузки картинки
+			const copyBtn = document.getElementById('copyBtn'); // кнопка копирования ссылки
+			const MAX_FILE_SIZE = 5 * 1024 * 1024; // Максимальный размер файла 5MB
+			const form = document.querySelector('form');  // форма отправки файла
+			const messagesContainer = document.querySelector('.messages'); // Контейнер для сообщений
+			
+			// Выбор файла
+			function chooseFileBtnChange() {				
+				loadBtn.classList.remove('btn-inactive'); // Кнопка загрузки активна
+			}
+			
+			// Функция для копирования ссылки
+			function copyBtnClick() {
+				// Получаем ссылку
+				const link = document.querySelector(".alert a");
+				
+				// Создаем временное текстовое поле
+				const tempInput = document.createElement("input");
+				tempInput.value = link.href;
+				document.body.appendChild(tempInput);
+				tempInput.select();
+				document.execCommand("copy"); // Копируем содержимое
+				document.body.removeChild(tempInput);
+			}
+			
+			// Обработчик загрузки картинки
+			function loadBtnClick(event) {
+				const file = chooseFileBtn.files[0];
+				
+				// Проверка размера файла
+				if (file && file.size > MAX_FILE_SIZE) {
+					event.preventDefault(); // Отмена стандартной отправки формы
+					loadBtn.classList.add('btn-inactive'); // Кнопка загрузки неактивна
+					chooseFileBtn.value = ''; // Очищаем поле выбора файла
+										
+					messagesContainer.innerHTML = ''; // Удаляем старые сообщения (если есть)
+					
+					// Создаем сообщение об ошибке
+					const errorMessageDiv = document.createElement('div');
+					errorMessageDiv.classList.add('alert', 'error');
+					const errorMessage = document.createElement('div');
+					errorMessage.innerHTML = `<strong>Ошибка: файл слишком большой. Максимальный размер — 5MB.</strong>`;
+					errorMessageDiv.appendChild(errorMessage);
+					messagesContainer.appendChild(errorMessageDiv);
+					
+					// Отправляем ошибку на сервер
+					fetch('/upload-error', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({ error: `Ошибка: файл ${file.name} слишком большой - ${file.size / 1024 / 1024} MB` })
+					})
+					.then(response => response.json())  // Ждем JSON-ответ от сервера
+					.then(data => {
+						console.error("Ошибка при отправке на сервер:", data);
+					})
+					.catch(error => {
+						console.error("Ошибка при отправке на сервер:", error);
+					});
+				}
+			}			
+			
+			chooseFileBtn.addEventListener('change', chooseFileBtnChange); // Обработчик выбора файла
+			copyBtn.addEventListener('click', copyBtnClick); // Обработчик копирования ссылки
+			form.addEventListener('submit', loadBtnClick); // Отслеживаем отправку формы
+        });
+    </script>
+</body>
+</html>

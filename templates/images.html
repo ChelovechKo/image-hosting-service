@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Каталог загруженных изображений</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Merienda&display=swap" rel="stylesheet">
+	<link rel="icon" href="/static/favicon.ico" type="image/x-icon">	
+</head>
+<body>
+    <!-- Контейнер для навигационных ссылок -->
+    <div class="top-links">
+        <a href="/" class="top-link">Главная</a> |
+        <a href="/upload" class="top-link">Загрузка изображений</a>
+    </div>
+
+    <!-- миниатюры изображений -->
+    <div class="container big-container">
+        <h1>Каталог загруженных изображений 🐱</h1>
+        <div class="image-gallery">
+            {% for image_url in image_urls %}
+				<div class="image-item">
+					<a href="{{ image_url }}" target="_blank">
+						<img src="{{ image_url }}" alt="Image" class="image-thumbnail">
+					</a>
+				</div>
+			{% else %}
+				<p>Изображения не найдены.</p>
+            {% endfor %}
+        </div>                    
+    </div>
+</body>
+</html>

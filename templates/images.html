@@ -15,19 +15,49 @@
     </div>
 
     <!-- миниатюры изображений -->
-    <div class="container big-container">
-        <h1>Каталог загруженных изображений 🐱</h1>
-        <div class="image-gallery">
-            {% for image_url in image_urls %}
-				<div class="image-item">
-					<a href="{{ image_url }}" target="_blank">
-						<img src="{{ image_url }}" alt="Image" class="image-thumbnail">
-					</a>
-				</div>
-			{% else %}
-				<p>Изображения не найдены.</p>
-            {% endfor %}
-        </div>                    
+    <div class="container">
+        <h1>Список загруженных изображений</h1>
+        {% if images %}
+        <table border="1" cellspacing="0" cellpadding="5">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Имя файла</th>
+                    <th>Оригинальное имя</th>
+                    <th>Размер (КБ)</th>
+                    <th>Дата загрузки</th>
+                    <th>Тип файла</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for img in images %}
+                <tr>
+                    <td>{{ img.id }}</td>
+                    <td><a href="/images/{{ img.filename }}" target="_blank">{{ img.filename }}</a></td>
+                    <td>{{ img.original_name }}</td>
+                    <td>{{ (img.size / 1024) | round(2) }}</td>
+                    <td>{{ img.upload_time }}</td>
+                    <td>{{ img.file_type }}</td>
+                    <td>
+                        <a href="/delete/{{ img.id }}" onclick="return confirm('Удалить изображение?')">Удалить</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="/images?page={{ page - 1 }}">Предыдущая страница</a>
+            {% endif %}
+            <span>Страница {{ page }} из {{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a href="/images?page={{ page + 1 }}">Следующая страница</a>
+            {% endif %}
+        </div>
+        {% else %}
+        <p>Нет загруженных изображений.</p>
+        {% endif %}
     </div>
 </body>
 </html>

@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, render_template, flash, redirect, url_for
 from werkzeug.utils import secure_filename
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # Настройка логирования
 logging.basicConfig(
@@ -10,6 +12,7 @@ logging.basicConfig(
     level=logging.INFO,                               # Уровень логирования
     format='%(asctime)s [%(levelname)s]: %(message)s' # Формат записи
 )
+
 app = Flask(__name__)
 app.secret_key = 'VhEnGT@lklcsShySWN%yAXKk}|Y3p?8~'
 
@@ -21,18 +24,47 @@ MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
-
-@app.route('/')
-def index():
-    '''Главная страница'''
-    return render_template('index.html')
+# Устанавливаем подключение к PostgreSQL
+try:
+    db_conn = psycopg2.connect(
+        dbname="images_db",
+        user="postgres",
+        password="password",
+        host="db",
+        port="5432"
+    )
+    db_conn.autocommit = True
+    db_cursor = db_conn.cursor(cursor_factory=RealDictCursor)
+    logging.info("Соединение с БД установлено")
+except Exception as e:
+    logging.error(f"Ошибка подключения к БД: {e}")
 
 
 def allowed_file(filename):
-    '''Проверка расширения файла'''
+    """Проверка расширения файла"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-           
+
+
+def save_metadata(filename, original_name, size, file_type):
+    """Сохраняет метаданные изображения в таблицу images"""
+    try:
+        query = """
+        INSERT INTO images (filename, original_name, size, file_type)
+        VALUES (%s, %s, %s, %s)
+        """
+        db_cursor.execute(query, (filename, original_name, size, file_type))
+        logging.info(f"Метаданные для файла {filename} сохранены в БД")
+    except Exception as e:
+        logging.error(f"Ошибка сохранения метаданных: {e}")
+        raise
+
+
+@app.route('/')
+def index():
+    """Главная страница"""
+    return render_template('index.html')
+
 
 @app.route('/upload-error', methods=['POST'])
 def handle_upload_error():
@@ -44,7 +76,8 @@ def handle_upload_error():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    '''Загрузка изображений'''
+    """Загрузка изображений"""
+    logging.info("Начало обработки загрузки файла")
     if 'file' not in request.files:
         flash(("Ошибка: файл не выбран!",), "error")
         logging.error("Ошибка: файл не выбран!")
@@ -68,6 +101,10 @@ def upload_file():
         
         try:
             file.save(filepath)
+            file_size = os.path.getsize(filepath)
+            file_ext = unique_filename.rsplit('.', 1)[1].lower()
+            if db_cursor:
+                save_metadata(unique_filename, filename, file_size, file_ext)
             logging.info(f"Успех: изображение {unique_filename} загружено.")
             flash(
                 ("Изображение успешно загружено!", f"<a href='/images/{unique_filename}' target='_blank'>/images/{unique_filename}</a>"), 
@@ -88,24 +125,64 @@ def upload_file():
 
 @app.route('/upload', methods=['GET'])
 def upload_page():
-    '''Страница с формой для загрузки изображения'''
+    """Страница с формой для загрузки изображения"""
     return render_template('upload.html')
 
 
 @app.route('/images')
 def images_list():
-    '''Страница с каталогом загруженных изображений'''
-    # Получаем список файлов в папке /images
-    image_files = os.listdir(app.config['UPLOAD_FOLDER'])
-    image_urls = [f"/images/{filename}" for filename in image_files if allowed_file(filename)]
+    """Страница с каталогом загруженных изображений с пагинацией"""
+    logging.info("Пользователь открыл страницу списка изображений")
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    per_page = 10
+    offset = (page - 1) * per_page
+    
+    try:
+        # Общее количество изображений для расчета пагинации
+        db_cursor.execute("SELECT COUNT(*) FROM images")
+        total = int(db_cursor.fetchone()['count'])
+        # Выборка записей с сортировкой по дате загрузки (от новых к старым)
+        db_cursor.execute("SELECT * FROM images ORDER BY upload_time DESC LIMIT %s OFFSET %s", (per_page, offset))
+        images = db_cursor.fetchall()
+    except Exception as e:
+        logging.error(f"Ошибка получения изображений из БД: {e}")
+        images = []
+        total = 0
+    total_pages = (total + per_page - 1) // per_page
+    return render_template('images.html', images=images, page=page, total_pages=total_pages)
 
-    # Передаем список изображений в шаблон
-    return render_template('images.html', image_urls=image_urls)
 
+@app.route('/delete/<int:image_id>', methods=['GET'])
+def delete_image(image_id):
+    """Удаление изображения по id"""
+    try:
+        db_cursor.execute("SELECT * FROM images WHERE id = %s", (image_id,))
+        image = db_cursor.fetchone()
+        if image:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], image['filename'])
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logging.info(f"Файл {file_path} удалён с диска")
+            else:
+                logging.error(f"Файл {file_path} не найден на диске")
+            db_cursor.execute("DELETE FROM images WHERE id = %s", (image_id,))
+            logging.info(f"Запись с id {image_id} удалена из БД")
+            flash(("Изображение успешно удалено.",), "success")
+        else:
+            flash(("Изображение не найдено.",), "error")
+            logging.error(f"Изображение с id {image_id} не найдено в БД")
+    except Exception as e:
+        logging.error(f"Ошибка при удалении изображения: {e}")
+        flash(("Произошла ошибка при удалении изображения.",), "error")
+    return redirect(url_for('images_list'))
+    
 
 @app.route('/images/<filename>')
 def uploaded_file(filename):
-    '''Доступ к изображению'''
+    """Доступ к изображению"""
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
